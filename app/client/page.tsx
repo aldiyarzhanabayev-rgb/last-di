@@ -1,7 +1,8 @@
 'use client'
-
 import { useState } from 'react'
 import Link from 'next/link'
+import { db } from '@/lib/firebase'
+import { addDoc, collection } from 'firebase/firestore'
 
 type FormState = {
   clientName: string
@@ -40,27 +41,43 @@ export default function ClientPage() {
     setLoading(true)
     setDone(false)
 
-    const res = await fetch('/api/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    })
-    const data = await res.json()
+    try {
+      // Пишем напрямую в Firestore с клиента — минуя API route
+      const docRef = await addDoc(collection(db, 'requests'), {
+        ...form,
+        status: 'new',
+        createdAt: new Date().toISOString()
+      })
 
-    if (data.success) {
-      setRequestId(data.requestId)
+      setRequestId(docRef.id)
       setDone(true)
-      // AI analysis starts automatically for logist panel. Client does not see options.
+
+      // Запускаем AI анализ для логиста
       fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: data.requestId })
+        body: JSON.stringify({ requestId: docRef.id })
       }).catch(() => {})
-    } else {
-      alert(data.error || 'Ошибка отправки заявки')
+
+    } catch (error: any) {
+      alert(error?.message || 'Ошибка отправки заявки')
     }
 
     setLoading(false)
+  }
+
+  if (done) {
+    return (
+      <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#1f5d91,transparent_30%),#07152f] px-6 py-8">
+        <div className="mx-auto max-w-xl text-center mt-20">
+          <div className="text-5xl mb-4">✅</div>
+          <h1 className="text-3xl font-black text-white">Заявка отправлена!</h1>
+          <p className="mt-4 text-white/65">ID заявки: <span className="text-white font-mono">{requestId}</span></p>
+          <p className="mt-2 text-white/65">Логист получит AI-рекомендацию и свяжется с вами.</p>
+          <Link href="/" className="mt-8 inline-block text-white/70 hover:text-white">← Главная</Link>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -73,32 +90,100 @@ export default function ClientPage() {
           <p className="mt-2 text-white/65">Клиент заполняет данные груза. Варианты рейсов клиенту не показываются — они доступны только логисту после AI-анализа.</p>
 
           <div className="mt-8 grid gap-4 md:grid-cols-2">
-            <input className="input" placeholder="Имя клиента" value={form.clientName} onChange={e => setForm({ ...form, clientName: e.target.value })} required />
-            <input className="input" placeholder="Компания" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} />
-            <input className="input" placeholder="Телефон" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required />
-            <input className="input" type="email" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            <input className="input" placeholder="Откуда" value={form.origin} onChange={e => setForm({ ...form, origin: e.target.value })} required />
-            <input className="input" placeholder="Куда" value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} required />
-            <input className="input" type="number" placeholder="Вес, кг" value={form.weightKg} onChange={e => setForm({ ...form, weightKg: e.target.value })} required />
-            <input className="input" type="number" step="0.1" placeholder="Объём, м³" value={form.volumeM3} onChange={e => setForm({ ...form, volumeM3: e.target.value })} />
-            <select className="input" value={form.cargoType} onChange={e => setForm({ ...form, cargoType: e.target.value })}>
+            <input
+              className="input"
+              placeholder="Имя клиента"
+              value={form.clientName}
+              onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}
+              required
+            />
+            <input
+              className="input"
+              placeholder="Компания"
+              value={form.company}
+              onChange={e => setForm(f => ({ ...f, company: e.target.value }))}
+            />
+            <input
+              className="input"
+              placeholder="Телефон"
+              value={form.phone}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+            />
+            <input
+              className="input"
+              placeholder="Email"
+              type="email"
+              value={form.email}
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              required
+            />
+            <input
+              className="input"
+              placeholder="Откуда"
+              value={form.origin}
+              onChange={e => setForm(f => ({ ...f, origin: e.target.value }))}
+              required
+            />
+            <input
+              className="input"
+              placeholder="Куда"
+              value={form.destination}
+              onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
+              required
+            />
+            <input
+              className="input"
+              placeholder="Вес (кг)"
+              type="number"
+              value={form.weightKg}
+              onChange={e => setForm(f => ({ ...f, weightKg: e.target.value }))}
+              required
+            />
+            <input
+              className="input"
+              placeholder="Объём (м³)"
+              type="number"
+              value={form.volumeM3}
+              onChange={e => setForm(f => ({ ...f, volumeM3: e.target.value }))}
+              required
+            />
+            <select
+              className="input"
+              value={form.cargoType}
+              onChange={e => setForm(f => ({ ...f, cargoType: e.target.value }))}
+            >
               <option value="general">General cargo</option>
               <option value="fragile">Fragile</option>
               <option value="pharma">Pharma</option>
               <option value="dangerous">Dangerous goods</option>
               <option value="valuable">Valuable cargo</option>
             </select>
-            <select className="input" value={form.urgency} onChange={e => setForm({ ...form, urgency: e.target.value })}>
+            <select
+              className="input"
+              value={form.urgency}
+              onChange={e => setForm(f => ({ ...f, urgency: e.target.value }))}
+            >
               <option value="balanced">Balanced</option>
               <option value="fastest">Fastest</option>
               <option value="cheapest">Cheapest</option>
             </select>
           </div>
 
-          <textarea className="input mt-4 min-h-28" placeholder="Комментарий" value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} />
-          <button className="btn btn-primary mt-5 w-full" disabled={loading}>{loading ? 'Отправка...' : 'Отправить заявку'}</button>
+          <textarea
+            className="input mt-4 w-full"
+            placeholder="Комментарий"
+            rows={3}
+            value={form.comment}
+            onChange={e => setForm(f => ({ ...f, comment: e.target.value }))}
+          />
 
-          {done && <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-emerald-100">Заявка отправлена. Номер заявки: <b>{requestId}</b>. Логист получит AI-рекомендации в своём кабинете.</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary mt-6 w-full"
+          >
+            {loading ? 'Отправка...' : 'Отправить заявку'}
+          </button>
         </form>
       </div>
     </main>

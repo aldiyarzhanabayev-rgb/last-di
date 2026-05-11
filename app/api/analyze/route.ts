@@ -1,21 +1,40 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { initializeApp, getApps } from 'firebase/app'
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore/lite'
 import { fallbackRecommendation, filterSuitableFlights } from '@/lib/flightLogic'
 import type { CargoRequest, Flight } from '@/lib/types'
 
-const client = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
+// firebase/firestore/lite использует HTTP вместо gRPC — работает в serverless без зависаний
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+}
+
+const app = getApps().find(a => a.name === 'server') ?? initializeApp(firebaseConfig, 'server')
+const db = getFirestore(app)
+
+const client = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
     const requestId = body.requestId
 
-    if (!requestId) return NextResponse.json({ success: false, error: 'requestId is required' }, { status: 400 })
+    if (!requestId) {
+      return NextResponse.json({ success: false, error: 'requestId is required' }, { status: 400 })
+    }
 
     const requestSnap = await getDoc(doc(db, 'requests', requestId))
-    if (!requestSnap.exists()) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 })
+    if (!requestSnap.exists()) {
+      return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 })
+    }
 
     const cargoRequest = { id: requestSnap.id, ...requestSnap.data() } as CargoRequest
 
@@ -52,7 +71,7 @@ Return JSON in this exact structure:
         const content = completion.choices[0]?.message?.content || '{}'
         recommendation = { ...recommendation, ...JSON.parse(content) }
       } catch (e) {
-        // fallback stays active if OpenAI fails
+        // fallback если OpenAI недоступен
       }
     }
 
@@ -60,7 +79,7 @@ Return JSON in this exact structure:
       requestId,
       ...recommendation,
       status: 'ai_recommended',
-      createdAt: new Date().toISOString(), // fix: serverTimestamp() не работает в API routes
+      createdAt: new Date().toISOString(),
     }
 
     await setDoc(doc(db, 'quotes', requestId), quotePayload)

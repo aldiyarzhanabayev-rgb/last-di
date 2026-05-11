@@ -1,30 +1,29 @@
 import { NextResponse } from 'next/server'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { addDoc, collection } from 'firebase/firestore'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const payload = {
-      clientName: body.clientName || '',
-      company: body.company || '',
-      phone: body.phone || '',
-      email: body.email || '',
-      origin: body.origin || 'Almaty',
-      destination: body.destination || 'Dubai',
-      weightKg: Number(body.weightKg || 0),
-      volumeM3: Number(body.volumeM3 || 0),
-      cargoType: body.cargoType || 'general',
-      urgency: body.urgency || 'balanced',
-      comment: body.comment || '',
+
+    const requestRef = await addDoc(collection(db, 'requests'), {
+      ...body,
       status: 'new',
-      createdAt: serverTimestamp()
-    }
+      createdAt: new Date().toISOString()
+    })
 
-    const docRef = await addDoc(collection(db, 'requests'), payload)
-
-    return NextResponse.json({ success: true, requestId: docRef.id })
+    return NextResponse.json({
+      success: true,
+      requestId: requestRef.id,
+      message: 'Заявка успешно отправлена'
+    })
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Request failed' }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || 'Ошибка при отправке заявки'
+      },
+      { status: 500 }
+    )
   }
 }

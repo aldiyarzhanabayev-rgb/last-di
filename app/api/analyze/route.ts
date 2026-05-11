@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { fallbackRecommendation, filterSuitableFlights } from '@/lib/flightLogic'
 import type { CargoRequest, Flight } from '@/lib/types'
@@ -11,29 +11,28 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const requestId = body.requestId
+
     if (!requestId) return NextResponse.json({ success: false, error: 'requestId is required' }, { status: 400 })
 
     const requestSnap = await getDoc(doc(db, 'requests', requestId))
     if (!requestSnap.exists()) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 })
 
     const cargoRequest = { id: requestSnap.id, ...requestSnap.data() } as CargoRequest
+
     const flightsSnap = await getDocs(collection(db, 'flights'))
     const flights = flightsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Flight[]
-    const suitable = filterSuitableFlights(cargoRequest, flights).slice(0, 20)
 
+    const suitable = filterSuitableFlights(cargoRequest, flights).slice(0, 20)
     let recommendation = fallbackRecommendation(cargoRequest, suitable.length ? suitable as any : flights)
 
     if (client && suitable.length > 0) {
       const prompt = `
 You are an AI logistics assistant for air cargo.
 Choose best flight options for this cargo request. Return only valid JSON.
-
 Cargo request:
 ${JSON.stringify(cargoRequest, null, 2)}
-
 Available suitable flights:
 ${JSON.stringify(suitable, null, 2)}
-
 Return JSON in this exact structure:
 {
   "recommendedFlightId": "flight id",
@@ -53,7 +52,7 @@ Return JSON in this exact structure:
         const content = completion.choices[0]?.message?.content || '{}'
         recommendation = { ...recommendation, ...JSON.parse(content) }
       } catch (e) {
-        // fallback stays active if API key/billing/model fails
+        // fallback stays active if OpenAI fails
       }
     }
 
@@ -61,7 +60,7 @@ Return JSON in this exact structure:
       requestId,
       ...recommendation,
       status: 'ai_recommended',
-      createdAt: serverTimestamp()
+      createdAt: new Date().toISOString(), // fix: serverTimestamp() не работает в API routes
     }
 
     await setDoc(doc(db, 'quotes', requestId), quotePayload)

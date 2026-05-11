@@ -18,6 +18,8 @@ export async function POST(request: Request) {
       message: 'Заявка успешно отправлена'
     })
   } catch (error: any) {
+    console.error('REQUEST_ERROR:', error)
+
     return NextResponse.json(
       {
         success: false,
